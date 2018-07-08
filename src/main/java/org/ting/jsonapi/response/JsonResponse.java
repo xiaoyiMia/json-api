@@ -48,12 +48,20 @@ public abstract class JsonResponse {
 	public void setErrors(List<JsonError> errors) {
 		this.errors = errors;
 	}
-	
+
 	public void addError(JsonError error) {
-		if(this.getErrors() == null) {
+		if (this.getErrors() == null) {
 			this.setErrors(new ArrayList<JsonError>());
 		}
 		this.getErrors().add(error);
+	}
+
+	public void addMeta(Map<String, Object> meta) {
+		if (this.getMeta() == null) {
+			this.setMeta(meta);
+		} else {
+			this.getMeta().putAll(meta);
+		}
 	}
 
 }

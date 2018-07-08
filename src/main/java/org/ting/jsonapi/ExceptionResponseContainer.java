@@ -2,7 +2,7 @@ package org.ting.jsonapi;
 
 import java.util.Map;
 
-public interface ExceptionResponse {
+public interface ExceptionResponseContainer {
 
 	default String _getId() {
 		return null;

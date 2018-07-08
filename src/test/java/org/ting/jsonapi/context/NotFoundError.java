@@ -1,8 +1,8 @@
 package org.ting.jsonapi.context;
 
-import org.ting.jsonapi.ExceptionResponse;
+import org.ting.jsonapi.ExceptionResponseContainer;
 
-public class NotFoundError implements ExceptionResponse{
+public class NotFoundError implements ExceptionResponseContainer{
 
 	private final String STATUS = "404";
 	

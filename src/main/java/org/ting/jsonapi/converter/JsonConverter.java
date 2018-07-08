@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
-import org.ting.jsonapi.ExceptionResponse;
+import org.ting.jsonapi.ExceptionResponseContainer;
 import org.ting.jsonapi.Page;
 import org.ting.jsonapi.annotations.JsonApiId;
 import org.ting.jsonapi.annotations.JsonApiRelation;
@@ -33,33 +33,45 @@ import org.ting.jsonapi.response.SingleRelationship;
 import org.ting.jsonapi.response.SingleResourceResponse;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 public class JsonConverter {
+	
+	public static ObjectMapper initializedMapper() {
+		ObjectMapper objectMapper = new ObjectMapper();
+		objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+		objectMapper.registerModule(new JavaTimeModule());
+		return objectMapper;
+	}
 
 	@SuppressWarnings("unchecked")
-	public static JsonResponse convert(Object object)
-			throws NoSuchFieldException, SecurityException, ClassNotFoundException, JsonApiException {
-		if (object == null) {
-			return null;
-		} else if (object instanceof ExceptionResponse) {
-			return convertExceptionResponse((ExceptionResponse) object);
-		} else if (object instanceof Exception) {
-			return convertGeneralException((Exception) object);
-		} else if (object instanceof Page) {
-			return convertResponsePage((Page<?>) object);
-		} else if (object instanceof Collection) {
-			Collection<?> objectCollection = (Collection<?>) object;
-			if (!objectCollection.isEmpty() && (objectCollection.iterator().next()) instanceof ExceptionResponse) {
-				return convertExceptionResponse((Collection<ExceptionResponse>) objectCollection);
+	public static JsonResponse convert(Object object) {
+		try {
+			if (object == null) {
+				return null;
+			} else if (object instanceof ExceptionResponseContainer) {
+				return convertExceptionResponse((ExceptionResponseContainer) object);
+			} else if (object instanceof Exception) {
+				return convertGeneralException((Exception) object);
+			} else if (object instanceof Page) {
+				return convertResponsePage((Page<?>) object);
+			} else if (object instanceof Collection) {
+				Collection<?> objectCollection = (Collection<?>) object;
+				if (!objectCollection.isEmpty() && (objectCollection.iterator().next()) instanceof ExceptionResponseContainer) {
+					return convertExceptionResponse((Collection<ExceptionResponseContainer>) objectCollection);
+				} else {
+					return convertResponseCollection(objectCollection);
+				}
 			} else {
-				return convertResponseCollection(objectCollection);
+				return convertSingleResponseObject(object);
 			}
-		} else {
-			return convertSingleResponseObject(object);
+		} catch (Exception e) {
+			return convertGeneralException(e);
 		}
 	}
 
-	public static JsonResponse convertGeneralException(Exception exception) {
+	private static JsonResponse convertGeneralException(Exception exception) {
 		JsonError jsonError = JsonError.builder().detail(exception.getMessage()).build();
 
 		SingleResourceResponse jsonResponse = new SingleResourceResponse();
@@ -71,10 +83,10 @@ public class JsonConverter {
 	 * Convert a error object to JsonApi formatted response object
 	 * 
 	 * @param error
-	 *            An object extends ErrorResponse
+	 *          An object extends ErrorResponse
 	 * @return
 	 */
-	public static JsonResponse convertExceptionResponse(ExceptionResponse error) {
+	private static JsonResponse convertExceptionResponse(ExceptionResponseContainer error) {
 		JsonError jsonError = convertError(error);
 
 		SingleResourceResponse jsonResponse = new SingleResourceResponse();
@@ -86,12 +98,12 @@ public class JsonConverter {
 	 * Convert errors object to JsonApi formatted response object
 	 * 
 	 * @param errors
-	 *            A collection of object that extends ErrorResponse
+	 *          A collection of object that extends ErrorResponse
 	 * @return
 	 */
-	public static JsonResponse convertExceptionResponse(Collection<ExceptionResponse> errors) {
+	private static JsonResponse convertExceptionResponse(Collection<ExceptionResponseContainer> errors) {
 		List<JsonError> jsonErrors = new ArrayList<JsonError>();
-		for (ExceptionResponse error : errors) {
+		for (ExceptionResponseContainer error : errors) {
 			jsonErrors.add(convertError(error));
 		}
 
@@ -100,22 +112,22 @@ public class JsonConverter {
 		return jsonResponse;
 	}
 
-	private static JsonError convertError(ExceptionResponse error) {
+	private static JsonError convertError(ExceptionResponseContainer error) {
 		ErrorSource errorSource = null;
 		if (error._getInvalidPayloadAttribute() != null || error._getInvalidQueryParameter() != null) {
 			errorSource = ErrorSource.builder()
-					.pointer(error._getInvalidPayloadAttribute() == null ? null : error._getInvalidPayloadAttribute())
-					.parameter(error._getInvalidQueryParameter()).build();
+			    .pointer(error._getInvalidPayloadAttribute() == null ? null : error._getInvalidPayloadAttribute())
+			    .parameter(error._getInvalidQueryParameter()).build();
 		}
 
 		Link links = error._getAboutLink() == null ? null : Link.builder().about(error._getAboutLink()).build();
 		return new JsonError.JsonErrorBuilder().code(error._getDetailCode()).detail(error._getErrorDetail())
-				.id(error._getId()).links(links).meta(error._getMeta()).source(errorSource)
-				.status(error._getStatusCode()).title(error._getErrorTitle()).build();
+		    .id(error._getId()).links(links).meta(error._getMeta()).source(errorSource).status(error._getStatusCode())
+		    .title(error._getErrorTitle()).build();
 	}
 
 	private static JsonResponse convertSingleResponseObject(Object object)
-			throws NoSuchFieldException, SecurityException, ClassNotFoundException, JsonApiException {
+	    throws NoSuchFieldException, SecurityException, ClassNotFoundException, JsonApiException {
 		SingleResourceResponse response = new SingleResourceResponse();
 
 		Set<Resource> includes = new HashSet<Resource>();
@@ -128,7 +140,7 @@ public class JsonConverter {
 	}
 
 	private static JsonResponse convertResponseCollection(Collection<?> objectCollection)
-			throws NoSuchFieldException, SecurityException, ClassNotFoundException, JsonApiException {
+	    throws NoSuchFieldException, SecurityException, ClassNotFoundException, JsonApiException {
 		ArrayResourceResponse response = new ArrayResourceResponse();
 
 		Set<Resource> dataSet = new HashSet<Resource>();
@@ -147,7 +159,7 @@ public class JsonConverter {
 	}
 
 	private static JsonResponse convertResponsePage(Page<?> objectPage)
-			throws NoSuchFieldException, SecurityException, ClassNotFoundException, JsonApiException {
+	    throws NoSuchFieldException, SecurityException, ClassNotFoundException, JsonApiException {
 		ArrayResourceResponse response = new ArrayResourceResponse();
 
 		Set<Resource> dataSet = new HashSet<Resource>();
@@ -176,13 +188,13 @@ public class JsonConverter {
 
 	@SuppressWarnings("unchecked")
 	private static Resource convertResponseObject(Object object, Set<Resource> includes)
-			throws NoSuchFieldException, SecurityException, JsonApiException, ClassNotFoundException {
+	    throws NoSuchFieldException, SecurityException, JsonApiException, ClassNotFoundException {
 		Class<?> resourceClass = object.getClass();
 		if (!resourceClass.isAnnotationPresent(JsonApiResource.class)) {
 			throw new ClassCannotConvertException("Missing @JsonApiResource annotation");
 		}
 
-		Map<String, Object> attributeMap = new ObjectMapper().convertValue(object, Map.class);
+		Map<String, Object> attributeMap = initializedMapper().convertValue(object, Map.class);
 		return generateResource(attributeMap, resourceClass, includes, null);
 	}
 
@@ -190,17 +202,17 @@ public class JsonConverter {
 	 * Convert a given attribute map to Resource data
 	 * 
 	 * @param attributeMap
-	 *            The given map contains all attributes information
+	 *          The given map contains all attributes information
 	 * @param resourceClass
-	 *            The original class type of the attributes information
+	 *          The original class type of the attributes information
 	 * @param includes
-	 *            The collection used to fulfill detail information of converting.
-	 *            It will be used as 'includes' object in the converted response.
-	 *            response object
+	 *          The collection used to fulfill detail information of converting. It
+	 *          will be used as 'includes' object in the converted response.
+	 *          response object
 	 * @param relatedRelationship
-	 *            The upper relationship object that related to this resource.
-	 *            Relationship object generated by this resource will be add into
-	 *            this one if not contained.
+	 *          The upper relationship object that related to this resource.
+	 *          Relationship object generated by this resource will be add into this
+	 *          one if not contained.
 	 * @return
 	 * @throws NoSuchFieldException
 	 * @throws SecurityException
@@ -209,8 +221,8 @@ public class JsonConverter {
 	 */
 	@SuppressWarnings("unchecked")
 	private static Resource generateResource(Map<String, Object> attributeMap, Class<?> resourceClass,
-			Set<Resource> includes, Relationships relatedRelationship)
-			throws NoSuchFieldException, SecurityException, ClassNotFoundException, JsonApiException {
+	    Set<Resource> includes, Relationships relatedRelationship)
+	    throws NoSuchFieldException, SecurityException, ClassNotFoundException, JsonApiException {
 
 		// Generate Data
 		Resource data = new Resource();
@@ -224,7 +236,7 @@ public class JsonConverter {
 			resourceType = annotation.type();
 		} else {
 			throw new ClassCannotConvertException(
-					"Class " + resourceClass.getSimpleName() + " missing @JsonApiResource annotation");
+			    "Class " + resourceClass.getSimpleName() + " missing @JsonApiResource annotation");
 		}
 
 		// Fields
@@ -263,14 +275,13 @@ public class JsonConverter {
 					}
 					for (Object value : valueCollection) {
 						ParameterizedType type = (ParameterizedType) field.getGenericType();
-						includes.add(generateResource((Map<String, Object>) value,
-								(Class<?>) type.getActualTypeArguments()[0], includes, relationship));
+						includes.add(generateResource((Map<String, Object>) value, (Class<?>) type.getActualTypeArguments()[0],
+						    includes, relationship));
 					}
 				} else if (fieldValue instanceof Map) {
 					includes.add(generateResource((Map<String, Object>) fieldValue, field.getType(), includes, null));
-				} else if(fieldValue instanceof String){
-					throw new IllegalAnnotationException(
-							"@JsonApiRelation cannot be used on an object mapped to simple string");
+				} else if (fieldValue instanceof String) {
+					throw new IllegalAnnotationException("@JsonApiRelation cannot be used on an object mapped to simple string");
 				}
 				attributeKeyToRemove.add(fieldKey);
 			}
@@ -284,7 +295,7 @@ public class JsonConverter {
 
 		if (resourceId == null) {
 			throw new ClassCannotConvertException(
-					"Class " + resourceClass.getSimpleName() + " missing @JsonApiId annotated attribute");
+			    "Class " + resourceClass.getSimpleName() + " missing @JsonApiId annotated attribute");
 		}
 		data.setId(resourceId);
 		data.setAttributes(attributeMap);
